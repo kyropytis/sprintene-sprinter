@@ -11,6 +11,7 @@ export interface Waypoint {
 }
 
 export type TravelMode = 'walking' | 'cycling' | 'driving';
+export type LineMode = 'direct' | 'osrm'; // 'direct' = Luftlinie
 
 export interface RouteData {
   coordinates: [number, number][]; // [lat, lng] array
@@ -18,6 +19,7 @@ export interface RouteData {
   durationsSeconds?: number;
   waypoints: Waypoint[];
   isCustom: boolean;
+  lineMode?: LineMode;
 }
 
 export interface TimeConfig {

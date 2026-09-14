@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { LatLng, Waypoint, TravelMode, RouteData, TimeConfig } from './types/route';
+import type { LatLng, Waypoint, TravelMode, LineMode, RouteData, TimeConfig } from './types/route';
 import { fetchOSRMRoute, reverseGeocode } from './services/routing';
+import { calculateRouteDistances } from './services/geoMath';
 import { usePacer } from './hooks/usePacer';
 import { useGeolocation } from './hooks/useGeolocation';
 import { MapView } from './components/MapView';
@@ -20,6 +21,7 @@ const INITIAL_WAYPOINTS: Waypoint[] = [
 export function App() {
   const [waypoints, setWaypoints] = useState<Waypoint[]>(INITIAL_WAYPOINTS);
   const [travelMode, setTravelMode] = useState<TravelMode>('walking');
+  const [lineMode, setLineMode] = useState<LineMode>('direct'); // Luftlinie by default for custom point routes
   const [routeData, setRouteData] = useState<RouteData | null>(null);
   const [isLoadingRoute, setIsLoadingRoute] = useState(false);
   const [isDesignMode, setIsDesignMode] = useState(false);
@@ -51,34 +53,58 @@ export function App() {
   const [activePanel, setActivePanel] = useState<'route' | 'time' | 'stats' | 'none'>('time');
   const [isPanelMinimized, setIsPanelMinimized] = useState(false);
 
-  // Calculate route with OSRM
-  const calculateRoute = useCallback(async (currentWaypoints: Waypoint[], mode: TravelMode) => {
-    if (currentWaypoints.length < 2) {
-      setRouteData(null);
-      return;
-    }
+  // Calculate route with Luftlinie (direct) or OSRM
+  const calculateRoute = useCallback(
+    async (
+      currentWaypoints: Waypoint[],
+      mode: TravelMode,
+      currentLineMode: LineMode = lineMode
+    ) => {
+      if (currentWaypoints.length < 2) {
+        setRouteData(null);
+        return;
+      }
 
-    setIsLoadingRoute(true);
-    try {
-      const res = await fetchOSRMRoute(currentWaypoints, mode);
-      setRouteData({
-        coordinates: res.coordinates,
-        distanceMeters: res.distanceMeters,
-        durationsSeconds: res.durationSeconds,
-        waypoints: currentWaypoints,
-        isCustom: false,
-      });
-    } catch (err) {
-      console.error('Error fetching route:', err);
-    } finally {
-      setIsLoadingRoute(false);
-    }
-  }, []);
+      if (currentLineMode === 'direct') {
+        // Direct Luftlinie between all waypoints
+        const coordinates: [number, number][] = currentWaypoints.map((w) => [w.lat, w.lng]);
+        const { totalDistance } = calculateRouteDistances(coordinates);
+
+        setRouteData({
+          coordinates,
+          distanceMeters: totalDistance,
+          durationsSeconds: totalDistance / (mode === 'cycling' ? 4.5 : mode === 'driving' ? 10 : 1.4),
+          waypoints: currentWaypoints,
+          isCustom: true,
+          lineMode: 'direct',
+        });
+        return;
+      }
+
+      setIsLoadingRoute(true);
+      try {
+        const res = await fetchOSRMRoute(currentWaypoints, mode);
+        setRouteData({
+          coordinates: res.coordinates,
+          distanceMeters: res.distanceMeters,
+          durationsSeconds: res.durationSeconds,
+          waypoints: currentWaypoints,
+          isCustom: false,
+          lineMode: 'osrm',
+        });
+      } catch (err) {
+        console.error('Error fetching route:', err);
+      } finally {
+        setIsLoadingRoute(false);
+      }
+    },
+    [lineMode]
+  );
 
   // Initial load & when travel mode changes
   useEffect(() => {
-    calculateRoute(waypoints, travelMode);
-  }, [travelMode]);
+    calculateRoute(waypoints, travelMode, lineMode);
+  }, [travelMode, lineMode]);
 
   // Hook for Pacer calculations & movement
   const {
@@ -120,7 +146,7 @@ export function App() {
 
     const nextWaypoints = [...waypoints, newWp];
     setWaypoints(nextWaypoints);
-    calculateRoute(nextWaypoints, travelMode);
+    calculateRoute(nextWaypoints, travelMode, lineMode);
   };
 
   const handleUpdateWaypoint = (id: string, coord: LatLng) => {
@@ -128,24 +154,24 @@ export function App() {
       w.id === id ? { ...w, lat: coord.lat, lng: coord.lng } : w
     );
     setWaypoints(nextWaypoints);
-    calculateRoute(nextWaypoints, travelMode);
+    calculateRoute(nextWaypoints, travelMode, lineMode);
   };
 
   const handleRemoveWaypoint = (id: string) => {
     const nextWaypoints = waypoints.filter((w) => w.id !== id);
     setWaypoints(nextWaypoints);
-    calculateRoute(nextWaypoints, travelMode);
+    calculateRoute(nextWaypoints, travelMode, lineMode);
   };
 
   const handleSetWaypoints = (newWaypoints: Waypoint[]) => {
     setWaypoints(newWaypoints);
-    calculateRoute(newWaypoints, travelMode);
+    calculateRoute(newWaypoints, travelMode, lineMode);
   };
 
   const handleReverseRoute = () => {
     const reversed = [...waypoints].reverse();
     setWaypoints(reversed);
-    calculateRoute(reversed, travelMode);
+    calculateRoute(reversed, travelMode, lineMode);
   };
 
   const resetStartToNow = () => {
@@ -252,6 +278,11 @@ export function App() {
                   waypoints={waypoints}
                   travelMode={travelMode}
                   onTravelModeChange={setTravelMode}
+                  lineMode={lineMode}
+                  onLineModeChange={(m) => {
+                    setLineMode(m);
+                    calculateRoute(waypoints, travelMode, m);
+                  }}
                   onSetWaypoints={handleSetWaypoints}
                   onRemoveWaypoint={handleRemoveWaypoint}
                   onReverseRoute={handleReverseRoute}

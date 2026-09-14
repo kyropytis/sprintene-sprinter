@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Geolocation } from '@capacitor/geolocation';
 import type { LatLng, RouteData, UserTrackingStatus } from '../types/route';
 import { findRouteProgressOfPoint } from '../services/geoMath';
 
@@ -17,18 +19,52 @@ export function useGeolocation({
   const [error, setError] = useState<string | null>(null);
   const [userSpeedKmH, setUserSpeedKmH] = useState<number | null>(null);
 
-  const watchIdRef = useRef<number | null>(null);
+  const watchIdRef = useRef<string | number | null>(null);
 
-  const toggleTracking = () => {
+  const toggleTracking = async () => {
     if (isEnabled) {
       if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
+        if (typeof watchIdRef.current === 'string') {
+          Geolocation.clearWatch({ id: watchIdRef.current });
+        } else {
+          navigator.geolocation.clearWatch(watchIdRef.current);
+        }
         watchIdRef.current = null;
       }
       setIsEnabled(false);
     } else {
+      setError(null);
+      setIsEnabled(true);
+
+      if (Capacitor.isNativePlatform()) {
+        try {
+          await Geolocation.requestPermissions();
+          const id = await Geolocation.watchPosition(
+            { enableHighAccuracy: true },
+            (position, err) => {
+              if (err) {
+                console.warn('Capacitor Geolocation error:', err);
+                setError(err.message || 'GPS Fehler');
+                return;
+              }
+              if (position?.coords) {
+                setUserCoord({ lat: position.coords.latitude, lng: position.coords.longitude });
+                setAccuracy(position.coords.accuracy);
+                if (position.coords.speed !== null && !isNaN(position.coords.speed)) {
+                  setUserSpeedKmH(position.coords.speed * 3.6);
+                }
+              }
+            }
+          );
+          watchIdRef.current = id;
+          return;
+        } catch (nativeErr) {
+          console.warn('Native geolocation failed, falling back to browser geolocation', nativeErr);
+        }
+      }
+
       if (!navigator.geolocation) {
-        setError('Geolocation wird von deinem Browser leider nicht unterstützt.');
+        setError('Geolocation wird von deinem Gerät nicht unterstützt.');
         return;
       }
       setError(null);
@@ -61,7 +97,11 @@ export function useGeolocation({
   useEffect(() => {
     return () => {
       if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
+        if (typeof watchIdRef.current === 'string') {
+          Geolocation.clearWatch({ id: watchIdRef.current });
+        } else {
+          navigator.geolocation.clearWatch(watchIdRef.current);
+        }
       }
     };
   }, []);

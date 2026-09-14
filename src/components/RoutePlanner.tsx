@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import type { Waypoint, TravelMode } from '../types/route';
+import type { Waypoint, TravelMode, LineMode } from '../types/route';
 import { searchAddress, type SearchResult } from '../services/routing';
 import {
   MapPin,
@@ -11,12 +11,16 @@ import {
   LocateFixed,
   Pencil,
   Compass,
+  Route as RouteIcon,
+  Ruler,
 } from 'lucide-react';
 
 interface RoutePlannerProps {
   waypoints: Waypoint[];
   travelMode: TravelMode;
   onTravelModeChange: (mode: TravelMode) => void;
+  lineMode: LineMode;
+  onLineModeChange: (mode: LineMode) => void;
   onSetWaypoints: (waypoints: Waypoint[]) => void;
   onRemoveWaypoint: (id: string) => void;
   onReverseRoute: () => void;
@@ -30,6 +34,8 @@ export const RoutePlanner = ({
   waypoints,
   travelMode,
   onTravelModeChange,
+  lineMode,
+  onLineModeChange,
   onSetWaypoints,
   onRemoveWaypoint,
   onReverseRoute,
@@ -304,6 +310,40 @@ export const RoutePlanner = ({
       {/* Mode 2: Custom Multi-point Route Design */}
       {plannerTab === 'custom' && (
         <div className="space-y-3">
+          {/* Streckenführung Toggle (Luftlinie vs Straßennetz) */}
+          <div className="flex items-center justify-between bg-slate-800/60 p-1.5 rounded-xl border border-slate-700/50">
+            <span className="text-xs text-slate-400 flex items-center gap-1.5">
+              <Ruler className="w-3.5 h-3.5 text-indigo-400" />
+              Führung:
+            </span>
+            <div className="flex gap-1 bg-slate-800 p-0.5 rounded-lg text-xs">
+              <button
+                onClick={() => onLineModeChange('direct')}
+                className={`px-2.5 py-1 rounded-md font-medium transition flex items-center gap-1 ${
+                  lineMode === 'direct'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Punkte direkt per gerader Linie (Luftlinie) verbinden"
+              >
+                <Ruler className="w-3 h-3" />
+                Luftlinie
+              </button>
+              <button
+                onClick={() => onLineModeChange('osrm')}
+                className={`px-2.5 py-1 rounded-md font-medium transition flex items-center gap-1 ${
+                  lineMode === 'osrm'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Wegfindung entlang Straßen und Wegen über OSRM"
+              >
+                <RouteIcon className="w-3 h-3" />
+                Straßen
+              </button>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between">
             <button
               onClick={onToggleDesignMode}
